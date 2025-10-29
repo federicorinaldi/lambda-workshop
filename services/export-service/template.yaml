@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Export Service - Read from DynamoDB and export to S3
+
+Parameters:
+  Environment:
+    Type: String
+    Default: local
+  TableName:
+    Type: String
+    Description: DynamoDB Table Name from infrastructure stack
+  BucketName:
+    Type: String
+    Description: S3 Bucket Name from infrastructure stack
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    MemorySize: 512
+    Timeout: 60
+    Tracing: Active
+    Environment:
+      Variables:
+        SERVICE_NAME: ExportService
+        SERVICE_VERSION: 1.0.0
+        ENVIRONMENT: !Ref Environment
+
+Resources:
+  # HTTP API
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+        AllowHeaders:
+          - "*"
+
+  # Export Lambda Function
+  ExportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handler.handler
+      Description: Reads item from DynamoDB and exports to S3 as JSON
+      Policies:
+        - AWSXRayDaemonWriteAccess
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:Query
+              Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:GetObject
+              Resource: !Sub "arn:aws:s3:::${BucketName}/*"
+      Events:
+        ExportApi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /export/{id}
+            Method: GET
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TableName
+          BUCKET_NAME: !Ref BucketName
+      LoggingConfig:
+        LogFormat: JSON
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2020
+        Sourcemap: false
+        EntryPoints:
+          - src/handler.ts
+
+Outputs:
+  ExportEndpoint:
+    Description: API Gateway endpoint URL for export function
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/export/{id}"
+    Export:
+      Name: !Sub "${AWS::StackName}-ExportEndpoint"
+
+  ExportFunctionArn:
+    Description: ARN of the Export Lambda function
+    Value: !GetAtt ExportFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-FunctionArn"

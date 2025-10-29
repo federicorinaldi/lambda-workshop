@@ -1,0 +1,21 @@
+{
+  "name": "api-service",
+  "version": "1.0.0",
+  "description": "API service for Lambda workshop - enqueue messages",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "sam build",
+    "deploy:local": "samlocal deploy --no-confirm-changeset",
+    "test:local": "sam local invoke ApiFunction --event events/test-event.json"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.137",
+    "@types/node": "^20.11.25",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.653.0"
+  }
+}

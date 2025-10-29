@@ -1,0 +1,22 @@
+{
+  "name": "processor-service",
+  "version": "1.0.0",
+  "description": "Processor service for Lambda workshop - SQS to DynamoDB",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "sam build",
+    "deploy:local": "samlocal deploy --no-confirm-changeset",
+    "test:local": "sam local invoke ProcessorFunction --event events/test-event.json"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.137",
+    "@types/node": "^20.11.25",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.653.0",
+    "@aws-sdk/util-dynamodb": "^3.653.0"
+  }
+}

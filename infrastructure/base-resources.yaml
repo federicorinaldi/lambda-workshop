@@ -1,0 +1,197 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Base infrastructure for Lambda Workshop - shared resources (DynamoDB, SQS, S3)
+
+Parameters:
+  Environment:
+    Type: String
+    Default: local
+    AllowedValues:
+      - local
+      - dev
+      - staging
+      - prod
+
+Resources:
+  # SQS Queue for async message processing
+  WorkshopQueueDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "workshop-${Environment}-dlq"
+      MessageRetentionPeriod: 1209600  # 14 days
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: DeadLetterQueue
+
+  WorkshopQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "workshop-${Environment}-queue"
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 345600  # 4 days
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt WorkshopQueueDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: AsyncProcessing
+
+  # DynamoDB Table for storing items
+  WorkshopTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "workshop-${Environment}-items"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: createdAt-index
+          KeySchema:
+            - AttributeName: createdAt
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: DataStore
+
+  # S3 Bucket for exports
+  WorkshopBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "workshop-${Environment}-exports"
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ExportStorage
+
+  # SSM Parameters for cross-stack references
+  QueueUrlParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/workshop/${Environment}/queue-url"
+      Description: URL of the workshop SQS queue
+      Type: String
+      Value: !Ref WorkshopQueue
+      Tags:
+        Environment: !Ref Environment
+
+  QueueArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/workshop/${Environment}/queue-arn"
+      Description: ARN of the workshop SQS queue
+      Type: String
+      Value: !GetAtt WorkshopQueue.Arn
+      Tags:
+        Environment: !Ref Environment
+
+  TableNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/workshop/${Environment}/table-name"
+      Description: Name of the workshop DynamoDB table
+      Type: String
+      Value: !Ref WorkshopTable
+      Tags:
+        Environment: !Ref Environment
+
+  TableArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/workshop/${Environment}/table-arn"
+      Description: ARN of the workshop DynamoDB table
+      Type: String
+      Value: !GetAtt WorkshopTable.Arn
+      Tags:
+        Environment: !Ref Environment
+
+  BucketNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/workshop/${Environment}/bucket-name"
+      Description: Name of the workshop S3 bucket
+      Type: String
+      Value: !Ref WorkshopBucket
+      Tags:
+        Environment: !Ref Environment
+
+  BucketArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/workshop/${Environment}/bucket-arn"
+      Description: ARN of the workshop S3 bucket
+      Type: String
+      Value: !GetAtt WorkshopBucket.Arn
+      Tags:
+        Environment: !Ref Environment
+
+Outputs:
+  QueueUrl:
+    Description: URL of the workshop SQS queue
+    Value: !Ref WorkshopQueue
+    Export:
+      Name: !Sub "${AWS::StackName}-QueueUrl"
+
+  QueueArn:
+    Description: ARN of the workshop SQS queue
+    Value: !GetAtt WorkshopQueue.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-QueueArn"
+
+  DLQArn:
+    Description: ARN of the DLQ
+    Value: !GetAtt WorkshopQueueDLQ.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-DLQArn"
+
+  TableName:
+    Description: Name of the workshop DynamoDB table
+    Value: !Ref WorkshopTable
+    Export:
+      Name: !Sub "${AWS::StackName}-TableName"
+
+  TableArn:
+    Description: ARN of the workshop DynamoDB table
+    Value: !GetAtt WorkshopTable.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-TableArn"
+
+  TableStreamArn:
+    Description: ARN of the DynamoDB stream
+    Value: !GetAtt WorkshopTable.StreamArn
+    Export:
+      Name: !Sub "${AWS::StackName}-TableStreamArn"
+
+  BucketName:
+    Description: Name of the workshop S3 bucket
+    Value: !Ref WorkshopBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketName"
+
+  BucketArn:
+    Description: ARN of the workshop S3 bucket
+    Value: !GetAtt WorkshopBucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketArn"

@@ -1,0 +1,24 @@
+{
+  "name": "lambda-workshop-sample",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "sam build",
+    "lint": "echo 'no linter configured'"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.137",
+    "@types/node": "^20.11.25",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.653.0",
+    "@aws-sdk/client-s3": "^3.653.0",
+    "@aws-sdk/client-sqs": "^3.653.0",
+    "@aws-sdk/util-dynamodb": "^3.653.0"
+  }
+}
+
+

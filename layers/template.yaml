@@ -1,0 +1,28 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Shared Lambda Layers for Workshop
+
+Resources:
+  SharedLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: workshop-shared-utilities
+      Description: Shared utilities (logger, correlation) for Lambda workshop
+      ContentUri: shared/
+      CompatibleRuntimes:
+        - nodejs18.x
+        - nodejs20.x
+      RetentionPolicy: Retain
+    Metadata:
+      BuildMethod: makefile
+
+Outputs:
+  SharedLayerArn:
+    Description: ARN of the shared utilities layer
+    Value: !Ref SharedLayer
+    Export:
+      Name: workshop-shared-layer-arn
+
+  SharedLayerVersion:
+    Description: Version of the shared utilities layer
+    Value: !GetAtt SharedLayer.Version

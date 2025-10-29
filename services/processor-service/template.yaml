@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Processor Service - Consume SQS messages and write to DynamoDB with partial batch failure handling
+
+Parameters:
+  Environment:
+    Type: String
+    Default: local
+  QueueUrl:
+    Type: String
+    Description: SQS Queue URL from infrastructure stack
+    Default: ""
+  QueueArn:
+    Type: String
+    Description: SQS Queue ARN from infrastructure stack
+  TableName:
+    Type: String
+    Description: DynamoDB Table Name from infrastructure stack
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    MemorySize: 512
+    Timeout: 60
+    Tracing: Active
+    Environment:
+      Variables:
+        SERVICE_NAME: ProcessorService
+        SERVICE_VERSION: 1.0.0
+        ENVIRONMENT: !Ref Environment
+
+Resources:
+  # SQS Processor Lambda Function
+  ProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handler.handler
+      Description: Consumes SQS messages and writes items to DynamoDB with partial batch failure support
+      Policies:
+        - AWSXRayDaemonWriteAccess
+        - Statement:
+            - Effect: Allow
+              Action:
+                - sqs:ReceiveMessage
+                - sqs:DeleteMessage
+                - sqs:GetQueueAttributes
+                - sqs:GetQueueUrl
+              Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:GetItem
+              Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}"
+      Events:
+        SqsEvent:
+          Type: SQS
+          Properties:
+            Queue: !Ref QueueArn
+            BatchSize: 10
+            MaximumBatchingWindowInSeconds: 5
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TableName
+      LoggingConfig:
+        LogFormat: JSON
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2020
+        Sourcemap: false
+        EntryPoints:
+          - src/handler.ts
+
+Outputs:
+  ProcessorFunctionArn:
+    Description: ARN of the Processor Lambda function
+    Value: !GetAtt ProcessorFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-FunctionArn"

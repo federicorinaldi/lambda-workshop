@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: API Service - Enqueue messages to SQS with correlation ID tracking
+
+Parameters:
+  Environment:
+    Type: String
+    Default: local
+  QueueUrl:
+    Type: String
+    Description: SQS Queue URL from infrastructure stack
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    MemorySize: 256
+    Timeout: 30
+    Tracing: Active
+    Environment:
+      Variables:
+        SERVICE_NAME: ApiService
+        SERVICE_VERSION: 1.0.0
+        ENVIRONMENT: !Ref Environment
+
+Resources:
+  # HTTP API
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+        AllowHeaders:
+          - "*"
+
+  # API Lambda Function
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handler.handler
+      Description: Accepts API requests and enqueues messages to SQS
+      Policies:
+        - AWSXRayDaemonWriteAccess
+        - Statement:
+            - Effect: Allow
+              Action:
+                - sqs:SendMessage
+                - sqs:GetQueueUrl
+              Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:*"
+      Events:
+        EnqueueApi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /enqueue
+            Method: POST
+      Environment:
+        Variables:
+          QUEUE_URL: !Ref QueueUrl
+      LoggingConfig:
+        LogFormat: JSON
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2020
+        Sourcemap: false
+        EntryPoints:
+          - src/handler.ts
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL for enqueue function
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/enqueue"
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiEndpoint"
+
+  ApiFunctionArn:
+    Description: ARN of the API Lambda function
+    Value: !GetAtt ApiFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-FunctionArn"

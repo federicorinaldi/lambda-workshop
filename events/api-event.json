@@ -1,0 +1,23 @@
+{
+  "version": "2.0",
+  "routeKey": "POST /enqueue",
+  "rawPath": "/enqueue",
+  "rawQueryString": "",
+  "headers": {
+    "x-correlation-id": "123e4567-e89b-12d3-a456-426614174000",
+    "host": "localhost",
+    "user-agent": "curl/7.79.1",
+    "accept": "*/*"
+  },
+  "requestContext": {
+    "http": {
+      "method": "POST",
+      "path": "/enqueue"
+    },
+    "requestId": "rq-abc123"
+  },
+  "body": "{\"id\":\"demo-1\",\"data\":{\"foo\":\"bar\"}}",
+  "isBase64Encoded": false
+}
+
+

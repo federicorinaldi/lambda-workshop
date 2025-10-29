@@ -1,0 +1,201 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Lambda Workshop sample SAM application with API, SQS processor, and shared layer
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    MemorySize: 128
+    Timeout: 10
+    Tracing: Active
+    Environment:
+      Variables:
+        SERVICE_NAME: LambdaWorkshopSample
+        SERVICE_VERSION: 1.0.0
+
+Resources:
+  # Shared Layer for reusable utilities (logger, correlation helpers)
+  SharedLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      Description: Shared utilities for Lambda workshop
+      ContentUri: layers/shared/
+      CompatibleRuntimes:
+        - nodejs20.x
+      RetentionPolicy: Retain
+    Metadata:
+      BuildMethod: makefile
+
+  # HTTP API backed by API Gateway and Lambda
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/apiEnqueue.handler
+      Description: API handler that enqueues messages to SQS with correlation ID
+      Layers:
+        - !Ref SharedLayer
+      Policies:
+        - AWSXRayDaemonWriteAccess
+        - Statement:
+            - Effect: Allow
+              Action:
+                - sqs:SendMessage
+              Resource: !GetAtt WorkshopQueue.Arn
+      Events:
+        EnqueueApi:
+          Type: HttpApi
+          Properties:
+            Path: /enqueue
+            Method: POST
+      Environment:
+        Variables:
+          QUEUE_URL: !Ref WorkshopQueue
+      LoggingConfig:
+        LogFormat: JSON
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: node20
+        Sourcemap: true
+        External:
+          - "/opt/nodejs/shared/*"
+
+  # SQS queue with DLQ and Lambda consumer supporting partial batch failures
+  WorkshopQueueDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-dlq"
+      MessageRetentionPeriod: 1209600 # 14 days
+
+  WorkshopQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-queue"
+      VisibilityTimeout: 60
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt WorkshopQueueDLQ.Arn
+        maxReceiveCount: 3
+
+  SqsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/sqsToDdb.handler
+      Description: Consumes SQS messages and writes items to DynamoDB
+      Layers:
+        - !Ref SharedLayer
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - sqs:ReceiveMessage
+                - sqs:DeleteMessage
+                - sqs:GetQueueAttributes
+                - sqs:GetQueueUrl
+              Resource: !GetAtt WorkshopQueue.Arn
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:GetItem
+              Resource: !GetAtt WorkshopTable.Arn
+        - AWSXRayDaemonWriteAccess
+      Events:
+        SqsEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt WorkshopQueue.Arn
+            BatchSize: 10
+            MaximumBatchingWindowInSeconds: 5
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+      LoggingConfig:
+        LogFormat: JSON
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref WorkshopTable
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: node20
+        Sourcemap: true
+        External:
+          - "/opt/nodejs/shared/*"
+
+  # DynamoDB table for items
+  WorkshopTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      TableName: !Sub "${AWS::StackName}-items"
+
+  # S3 bucket for exported objects
+  WorkshopBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-${AWS::AccountId}-${AWS::Region}-exports"
+
+  # HTTP API function to read from DynamoDB and put object to S3
+  DdbToS3Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/ddbToS3.handler
+      Description: Reads an item from DynamoDB and writes a JSON file to S3
+      Layers:
+        - !Ref SharedLayer
+      Policies:
+        - AWSXRayDaemonWriteAccess
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+              Resource: !GetAtt WorkshopTable.Arn
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+              Resource: !Sub "${WorkshopBucket.Arn}/*"
+      Events:
+        ExportApi:
+          Type: HttpApi
+          Properties:
+            Path: /export/{id}
+            Method: GET
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref WorkshopTable
+          BUCKET_NAME: !Ref WorkshopBucket
+      LoggingConfig:
+        LogFormat: JSON
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: node20
+        Sourcemap: true
+        External:
+          - "/opt/nodejs/shared/*"
+
+Outputs:
+  ApiEndpoint:
+    Description: HTTP API enqueue endpoint URL
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/enqueue"
+  QueueUrl:
+    Description: URL of the workshop SQS queue
+    Value: !Ref WorkshopQueue
+  QueueArn:
+    Description: ARN of the workshop SQS queue
+    Value: !GetAtt WorkshopQueue.Arn
+  ExportEndpoint:
+    Description: HTTP API export endpoint URL
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/export/{id}"
+
+

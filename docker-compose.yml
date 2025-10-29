@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  localstack:
+    image: localstack/localstack:latest
+    container_name: lambda-workshop-localstack
+    ports:
+      - "4566:4566"            # LocalStack Gateway
+      - "4510-4559:4510-4559"  # External services port range
+    environment:
+      - SERVICES=lambda,apigateway,sqs,dynamodb,s3,iam,cloudformation,logs,sts,ssm
+      - DEBUG=1
+      - LAMBDA_EXECUTOR=docker-reuse
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - PERSISTENCE=1
+      - LAMBDA_RUNTIME_ENVIRONMENT_TIMEOUT=300
+      - LAMBDA_REMOVE_CONTAINERS=true
+    volumes:
+      - "./localstack-data:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    networks:
+      - lambda-workshop
+
+  # Optional: Splunk for monitoring demo
+  splunk:
+    image: splunk/splunk:latest
+    container_name: lambda-workshop-splunk
+    environment:
+      - SPLUNK_START_ARGS=--accept-license
+      - SPLUNK_PASSWORD=Admin123!
+      - SPLUNK_HEC_TOKEN=abcd1234-5678-90ef-ghij-klmnopqrstuv
+    ports:
+      - "8000:8000"   # Splunk Web UI
+      - "8088:8088"   # HEC (HTTP Event Collector)
+    volumes:
+      - "splunk-data:/opt/splunk/var"
+    networks:
+      - lambda-workshop
+    profiles:
+      - monitoring
+
+networks:
+  lambda-workshop:
+    driver: bridge
+
+volumes:
+  splunk-data:

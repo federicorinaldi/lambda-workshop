@@ -1,0 +1,72 @@
+Subject: LocalStack Setup Requirements for Rootless Podman Environment - Documentation
+
+Hi [Boss Name],
+
+I wanted to document the additional setup steps required to run the Lambda Workshop with LocalStack in our environment, since we're using rootless Podman with SELinux instead of standard Docker. This will help onboard new team members working in similar environments.
+
+## Environment Context
+Our infrastructure uses:
+- Podman in rootless mode (not Docker)
+- SELinux in enforcing mode
+- No sudo/root access for users
+
+## Issues Encountered
+
+The standard LocalStack setup failed because:
+
+1. **Docker Socket Access**: LocalStack container couldn't spawn Lambda containers
+   - Root cause: Rootless podman uses user-specific socket at `/run/user/<UID>/podman/podman.sock`
+   - The docker-compose was trying to mount `/var/run/docker.sock` (root-owned socket)
+   - SELinux was blocking container access to the socket
+
+2. **Missing Dependencies**:
+   - `awslocal` CLI tool wasn't installed
+   - `esbuild` wasn't accessible on PATH (needed by SAM CLI to bundle TypeScript)
+
+## Solutions Implemented
+
+1. **Created `docker-compose.override.yml`**
+   - Overrides socket mount to use user's podman socket via `${XDG_RUNTIME_DIR}`
+   - Adds SELinux relabeling (`:z` flag) and disables container isolation
+   - This file is environment-specific and doesn't modify the base codebase
+
+2. **Installed awslocal**
+   ```bash
+   pip3 install --user awscli-local
+   ```
+
+3. **Created esbuild symlink**
+   ```bash
+   ln -s <project>/node_modules/.bin/esbuild ~/.local/bin/esbuild
+   ```
+
+## Results
+
+After implementing these fixes:
+✅ LocalStack starts successfully and all AWS services are available
+✅ Infrastructure and all Lambda services deploy correctly
+✅ End-to-end tests pass with complete workflow validation
+✅ Full correlation ID tracking through API Gateway → Lambda → SQS → DynamoDB → S3
+
+## Documentation
+
+I've created detailed setup documentation in `SETUP-NOTES.md` that includes:
+- Complete step-by-step instructions for new users
+- Technical explanation of why standard Docker setup doesn't work
+- Verification steps to confirm everything is working
+- Testing results
+
+This should help any new team members get the workshop running quickly in our environment.
+
+## Recommendation
+
+Consider adding a `scripts/setup-rootless-podman.sh` script that automatically detects the environment and applies these fixes, which would further streamline onboarding.
+
+Let me know if you have any questions or would like me to present this to the team.
+
+Best regards,
+[Your Name]
+
+---
+Attachments:
+- SETUP-NOTES.md (detailed technical documentation)
